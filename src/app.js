@@ -292,13 +292,21 @@ function openPopover() {
   pop.style.top = Math.min(coords.bottom - box.top + 8, box.height - pop.offsetHeight - 8) + "px";
   chip.hidden = true;
   S.popSel = info;
+  $("popQuote").textContent = info.text.trim();
   $("popText").value = "";
+  updatePopButton();
   $("popText").focus();
+}
+
+function popCount() { return +($("pop").querySelector('.seg [aria-checked="true"]')?.dataset.n || 3); }
+function updatePopButton() {
+  const has = !!$("popText").value.trim();
+  $("popGo").textContent = has ? (popCount() === 1 ? "Rewrite" : "Get 3 takes") : "Surprise me";
 }
 
 function closePopover() { $("pop").hidden = true; S.popSel = null; }
 
-async function requestRewrite(instruction, existing) {
+async function requestRewrite(instruction, existing, count) {
   // existing: {pendingId, original} when refining an earlier round
   let pendingId, original;
   if (existing) {
@@ -309,6 +317,7 @@ async function requestRewrite(instruction, existing) {
   } else {
     const info = S.popSel || selectionInfo();
     if (!info) return;
+    count = popCount();
     closePopover();
     pendingId = uid();
     original = info.text;
@@ -323,24 +332,25 @@ async function requestRewrite(instruction, existing) {
   const sc = sceneAt(r.from);
 
   const prev = existing ? S.turns.filter((t) => t.kind === "options" && t.pendingId === pendingId).pop() : null;
+  count = count || prev?.count || 3;
   const userTurn = {
     role: "user", kind: "rewrite", pendingId, quote: original, scene: sc?.heading || "",
-    content: `Rewrite${sc ? " in " + sc.heading : ""}: ${instruction || "alternate takes"}`,
+    content: `Rewrite${sc ? " in " + sc.heading : ""}: ${instruction || "your own takes"}`,
   };
   S.turns.push(userTurn);
-  const asstTurn = { role: "assistant", kind: "options", pendingId, original, options: null, pending: true, content: "" };
+  const asstTurn = { role: "assistant", kind: "options", pendingId, original, options: null, pending: true, content: "", count };
   S.turns.push(asstTurn);
   renderChat();
 
   const prompt = rewriteTurn({
-    selected: original, before, after, instruction,
+    selected: original, before, after, instruction, count,
     previous: prev?.options ? prev.options.map((o, i) => `${i + 1}. ${o.label}\n${o.text}`).join("\n\n") : "",
   });
   const turns = buildTurns(prompt, { forRewrite: true });
 
   await withClaude(async (signal) => {
     const res = await S.claude.askJSON(turns, { signal, tier: S.settings.tier });
-    const options = (res?.options || []).filter((o) => o && typeof o.text === "string").slice(0, 4).map((o) => ({
+    const options = (res?.options || []).filter((o) => o && typeof o.text === "string").slice(0, count).map((o) => ({
       label: String(o.label || "Option"), note: String(o.note || ""), text: fitWhitespace(original, o.text),
     }));
     if (!options.length) throw { code: "invalid_json" };
@@ -474,7 +484,7 @@ function renderChat() {
     intro.className = "msg system";
     intro.innerHTML = `<div class="body">${
       S.view
-        ? `<p>Ask anything about the script, or ask for changes. Proposed edits arrive as cards you can apply.</p><p>To rework a passage, highlight it and press <b>Rewrite with Claude</b> (⌘K). You get three options to apply, refine or dismiss.</p>`
+        ? `<p>Ask anything about the script, or ask for changes. Proposed edits arrive as cards you can apply.</p><p>To rework a passage, highlight it, press <b>Rewrite with Claude</b> (⌘K), and tell Claude what you want. Choose one take or three, then apply, redirect or dismiss.</p>`
         : `<p>Open a script to start.</p>`
     }${S.claudeChecked && !S.claude ? `<p class="err">Claude isn't reachable from this view. Editing still works; chat and rewrites need the page open in claude.ai.</p>` : ""}</div>`;
     log.append(intro);
@@ -498,7 +508,7 @@ function renderTurn(t) {
   }
 
   if (t.kind === "options") {
-    if (t.pending && !t.failed) html += `<div class="body thinking">Writing three options…</div>`;
+    if (t.pending && !t.failed) html += `<div class="body thinking">${t.count === 1 ? "Rewriting…" : "Writing " + (t.count || 3) + " takes…"}</div>`;
     if (t.options) {
       html += t.options.map((o, i) => `
         <div class="card">
@@ -510,7 +520,7 @@ function renderTurn(t) {
           </div>
         </div>`).join("");
       if (!t.closed) {
-        html += `<div class="refine"><input type="text" id="refine-${t.pendingId}-${S.turns.indexOf(t)}" placeholder="Refine: more like 2, but quieter" data-act="refine-input"><button class="btn" data-act="refine">Again</button><button class="btn ghost" data-act="dismiss">Dismiss</button></div>`;
+        html += `<div class="refine"><input type="text" id="refine-${t.pendingId}-${S.turns.indexOf(t)}" placeholder="New direction, e.g. take 2 but quieter" data-act="refine-input"><button class="btn" data-act="refine">Again</button><button class="btn ghost" data-act="dismiss">Dismiss</button></div>`;
       }
     }
     if (t.error) html += `<div class="err">${esc(t.error)}</div>`;
@@ -766,11 +776,27 @@ function bindUI() {
   $("chipRewrite").onclick = openPopover;
   $("popCancel").onclick = () => { closePopover(); S.view?.focus(); };
   $("popGo").onclick = () => requestRewrite($("popText").value.trim());
+  $("popText").addEventListener("input", updatePopButton);
+  $("pop").querySelector(".seg").onclick = (e) => {
+    const b = e.target.closest("[data-n]");
+    if (!b) return;
+    $("pop").querySelectorAll(".seg [data-n]").forEach((x) => x.setAttribute("aria-checked", x === b));
+    updatePopButton();
+  };
   $("popText").onkeydown = (e) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); requestRewrite($("popText").value.trim()); }
     if (e.key === "Escape") { closePopover(); S.view?.focus(); }
   };
-  $("popQuick").onclick = (e) => { const b = e.target.closest("[data-q]"); if (b) requestRewrite(b.dataset.q); };
+  $("popQuick").onclick = (e) => {
+    const b = e.target.closest("[data-q]");
+    if (!b) return;
+    const t = $("popText");
+    const cur = t.value.trim();
+    t.value = cur ? (cur.endsWith(".") ? cur + " " : cur + ". ") + b.dataset.q : b.dataset.q;
+    updatePopButton();
+    t.focus();
+    t.setSelectionRange(t.value.length, t.value.length);
+  };
 
   $("btnSend").onclick = () => (S.busy ? S.busy.abort() : sendChat());
   $("input").oninput = autoGrow;

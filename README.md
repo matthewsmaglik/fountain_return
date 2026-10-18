@@ -11,7 +11,7 @@ A two-pane screenplay editor for working on Fountain scripts with Claude.
 | You want to | Do this |
 | --- | --- |
 | Talk about the script | Type in the chat. Claude reads the whole current draft each time. |
-| Get a passage redone | Highlight it, press **Rewrite with Claude** (⌘K / Ctrl+K), say what should change or pick a quick chip. You get three options. **Apply** one, type a refinement and press **Again**, or **Dismiss**. The passage stays tinted pink while options are open, and you can keep editing elsewhere. |
+| Get a passage redone | Highlight it, press **Rewrite with Claude** (⌘K / Ctrl+K), and write your direction. Quick chips add phrases to your direction rather than sending anything. Choose **1 take** or **3 takes**. **Apply** one, type a new direction and press **Again**, or **Dismiss**. Leaving the direction empty sends **Surprise me**. The passage stays tinted pink while options are open, and you can keep editing elsewhere. |
 | Ask about a specific moment | Highlight it, then type in the chat. The selection travels with the message. |
 | Accept a suggested change | Chat replies can carry edit cards (old text struck through, new text below). **Apply** makes the change; ⌘Z undoes it. |
 | Keep a checkpoint | **Revisions**, then save. Snapshots follow the industry color order (White, Blue, Pink, Yellow, Green, Goldenrod…). |

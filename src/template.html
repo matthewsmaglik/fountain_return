@@ -143,15 +143,23 @@ button { cursor: pointer; }
 }
 .chip-rewrite kbd { font-family: var(--f-label); opacity: .65; font-size: 11px; }
 .pop {
-  position: absolute; z-index: 21; width: min(380px, calc(100% - 32px)); background: var(--paper);
+  position: absolute; z-index: 21; width: min(440px, calc(100% - 32px)); background: var(--paper);
   border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); padding: 12px; display: grid; gap: 10px;
 }
 .pop label { font-family: var(--f-label); font-size: 12px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
-.pop textarea { width: 100%; box-sizing: border-box; min-height: 64px; resize: vertical; border: 1px solid var(--line); border-radius: 6px; padding: 8px; background: var(--panel); }
+.pop textarea { width: 100%; box-sizing: border-box; min-height: 88px; resize: vertical; border: 1px solid var(--line); border-radius: 6px; padding: 8px; background: var(--panel); }
 .quick { display: flex; flex-wrap: wrap; gap: 6px; }
 .quick button { border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 3px 10px; font-size: 12.5px; }
 .quick button:hover { border-color: var(--accent); }
-.pop-row { display: flex; justify-content: flex-end; gap: 6px; }
+.pop-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pop-quote { font-family: var(--f-script); font-size: 12.5px; line-height: 1.45; color: var(--muted); border-left: 2px solid var(--pending-edge); padding-left: 8px; white-space: pre-wrap; max-height: 6em; overflow: hidden; }
+.quick-wrap { display: grid; gap: 6px; }
+.quick-label { font-size: 12px; color: var(--faint); }
+.quick button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; background: var(--panel); padding: 4px 10px; font-family: var(--f-label); font-size: 12.5px; color: var(--muted); }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-checked="true"] { background: var(--accent-soft); color: var(--ink); }
 
 /* ---- Breakdown box ---- */
 .breakdown {
@@ -304,16 +312,30 @@ button { cursor: pointer; }
 
       <button class="chip-rewrite" id="chipRewrite" hidden>Rewrite with Claude <kbd>⌘K</kbd></button>
       <div class="pop" id="pop" hidden>
-        <label for="popText">What should change?</label>
-        <textarea id="popText" placeholder="Tighter. Keep the dread. Or leave blank for alternate takes."></textarea>
-        <div class="quick" id="popQuick">
-          <button data-q="Tighten it. Cut anything the audience doesn't need.">Tighten</button>
-          <button data-q="Make it scarier. Slow the reveal down.">More dread</button>
-          <button data-q="Sharpen the dialogue. More subtext, fewer words.">Sharpen dialogue</button>
-          <button data-q="Make the action more visual and specific.">More visual</button>
-          <button data-q="Give me alternate takes with different approaches.">Alternate takes</button>
+        <div class="pop-quote" id="popQuote"></div>
+        <label for="popText">Your direction</label>
+        <textarea id="popText" placeholder="e.g. Tom almost tells her, then covers. Keep it under four lines."></textarea>
+        <div class="quick-wrap">
+          <span class="quick-label">Add to your direction</span>
+          <div class="quick" id="popQuick">
+            <button data-q="Tighten it.">Tighten</button>
+            <button data-q="Slow the reveal down.">Slower reveal</button>
+            <button data-q="More subtext, fewer words.">More subtext</button>
+            <button data-q="More visual and specific.">More visual</button>
+            <button data-q="Keep the dialogue as is; only touch action lines.">Action only</button>
+            <button data-q="Keep the action as is; only touch dialogue.">Dialogue only</button>
+          </div>
         </div>
-        <div class="pop-row"><button class="btn ghost" id="popCancel">Cancel</button><button class="btn primary" id="popGo">Get options</button></div>
+        <div class="pop-row">
+          <div class="seg" role="radiogroup" aria-label="How many takes">
+            <button role="radio" data-n="1" aria-checked="false">1 take</button>
+            <button role="radio" data-n="3" aria-checked="true">3 takes</button>
+          </div>
+          <span style="flex:1"></span>
+          <button class="btn ghost" id="popCancel">Cancel</button>
+          <button class="btn primary" id="popGo">Surprise me</button>
+        </div>
+        <p class="hint">Enter to send, Shift+Enter for a new line.</p>
       </div>
 
       <div class="banner" id="banner" hidden></div>

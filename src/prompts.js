@@ -22,7 +22,7 @@ export function rulesTurn({ text, styleNotes, focus }) {
   ].join("\n");
 }
 
-export function rewriteTurn({ selected, before, after, instruction, previous }) {
+export function rewriteTurn({ selected, before, after, instruction, previous, count = 3 }) {
   return [
     "REWRITE REQUEST",
     "Rewrite only the selected passage below. Your text replaces it exactly, so it must fit between the text before and after it.",
@@ -36,11 +36,16 @@ export function rewriteTurn({ selected, before, after, instruction, previous }) 
     "Text just after the selection:",
     '"""', after, '"""',
     "",
-    `Writer's instruction: ${instruction || "Give me alternate takes."}`,
+    instruction
+      ? `WRITER'S DIRECTION (follow it closely; it outranks your own taste):\n${instruction}`
+      : "No specific direction. Offer your own best takes.",
     previous ? `\nYou already offered these options; the writer wants a new round that takes the instruction into account:\n${previous}` : "",
     "",
     'Reply with only JSON: {"options":[{"label":"2 to 4 words","text":"the replacement passage in Fountain","note":"one short sentence on the approach"}]}',
-    "Give three options that differ in approach, not just wording. Keep Fountain formatting valid and keep the same element types unless the instruction asks otherwise.",
+    count === 1
+      ? "Give exactly one option: the version that best carries out the direction."
+      : `Give ${count} options. Each one must carry out the direction; vary how, not whether.`,
+    "Keep Fountain formatting valid and keep the same element types unless the direction asks otherwise. Change only what the direction calls for.",
   ].join("\n");
 }
 
