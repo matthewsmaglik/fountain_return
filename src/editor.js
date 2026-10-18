@@ -1,7 +1,7 @@
 // CodeMirror 6 setup: the script stays plain Fountain text, and screenplay
 // layout is applied as line decorations so the caret always matches the text.
 import { EditorState, StateField, StateEffect } from "@codemirror/state";
-import { EditorView, Decoration, WidgetType, keymap, drawSelection, highlightActiveLine } from "@codemirror/view";
+import { EditorView, Decoration, WidgetType, ViewPlugin, keymap } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { classify, paginate } from "./fountain.js";
 
@@ -76,6 +76,20 @@ export const pendingField = StateField.define({
   provide: (f) => EditorView.decorations.from(f, (v) => v.deco),
 });
 
+// The browser's own selection follows the text exactly, including indented
+// dialogue. It disappears when focus moves to the chat or the rewrite box, so
+// while the editor is unfocused we paint the selection as a text mark.
+const ghostMark = Decoration.mark({ class: "fl-selghost" });
+const keepSelectionVisible = ViewPlugin.fromClass(class {
+  constructor(view) { this.decorations = this.build(view); }
+  update(u) { if (u.focusChanged || u.selectionSet || u.docChanged) this.decorations = this.build(u.view); }
+  build(view) {
+    if (view.hasFocus) return Decoration.none;
+    const ranges = view.state.selection.ranges.filter((r) => !r.empty).map((r) => ghostMark.range(r.from, r.to));
+    return ranges.length ? Decoration.set(ranges, true) : Decoration.none;
+  }
+}, { decorations: (v) => v.decorations });
+
 export function getPending(view, id) {
   return view.state.field(pendingField).ranges.get(id);
 }
@@ -83,8 +97,7 @@ export function getPending(view, id) {
 export function createEditor({ parent, doc, onChange, onSelection, extraKeys = [] }) {
   const extensions = [
     history(),
-    drawSelection(),
-    highlightActiveLine(),
+    keepSelectionVisible,
     EditorView.lineWrapping,
     fountainField,
     pendingField,

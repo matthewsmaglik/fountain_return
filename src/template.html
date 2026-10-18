@@ -114,9 +114,8 @@ button { cursor: pointer; }
 .cm-scroller { font-family: var(--f-script) !important; line-height: 1.5; overflow: visible !important; }
 .cm-content { padding: 0; caret-color: var(--accent); width: 60ch; max-width: 100%; }
 .cm-line { padding: 0; position: relative; }
-.cm-activeLine { background: color-mix(in srgb, var(--accent-soft) 35%, transparent); }
-.cm-selectionBackground, .cm-editor.cm-focused .cm-selectionBackground, ::selection { background: color-mix(in srgb, var(--accent) 28%, transparent) !important; }
-.cm-cursor { border-left: 2px solid var(--accent); }
+.cm-content ::selection, .cm-content::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+.fl-selghost { background: color-mix(in srgb, var(--accent) 22%, transparent); border-radius: 1px; }
 .fl-scene { font-weight: 700; text-transform: uppercase; }
 .fl-scene::before {
   content: attr(data-scene); position: absolute; left: -5.5ch; width: 4ch; text-align: right;

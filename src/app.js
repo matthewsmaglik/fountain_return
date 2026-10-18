@@ -257,18 +257,53 @@ function sceneAt(pos) {
   return found;
 }
 
+// Show the Rewrite chip only once a selection settles: not mid-drag, and not
+// on every Shift+arrow press.
+let chipTimer = 0;
 function onSelection() {
   const info = selectionInfo();
-  const chip = $("chipRewrite");
   updateFocusChip(info);
-  if (!info || !$("pop").hidden) { chip.hidden = true; return; }
-  const coords = S.view.coordsAtPos(info.to) || S.view.coordsAtPos(info.from);
+  const chip = $("chipRewrite");
+  clearTimeout(chipTimer);
+  if (!info || !$("pop").hidden || S.dragging) { chip.hidden = true; return; }
+  chipTimer = setTimeout(placeChip, 160);
+}
+
+function placeChip() {
+  const info = selectionInfo();
+  const chip = $("chipRewrite");
+  if (!info || S.dragging || !$("pop").hidden) { chip.hidden = true; return; }
+  const head = S.view.state.selection.main.head;
+  const upward = head === info.from;
+  const coords = S.view.coordsAtPos(head, upward ? 1 : -1);
   if (!coords) { chip.hidden = true; return; }
   const box = $("desk").getBoundingClientRect();
   chip.hidden = false;
-  const cw = chip.offsetWidth;
+  const cw = chip.offsetWidth, ch = chip.offsetHeight;
+  let top = upward ? coords.top - box.top - ch - 8 : coords.bottom - box.top + 8;
+  if (top < 8) top = coords.bottom - box.top + 8;
+  if (top > box.height - ch - 8) top = coords.top - box.top - ch - 8;
+  if (top < 8 || top > box.height - ch - 8) { chip.hidden = true; return; }
   chip.style.left = Math.max(8, Math.min(coords.left - box.left - cw / 2, box.width - cw - 8)) + "px";
-  chip.style.top = Math.min(coords.bottom - box.top + 8, box.height - 44) + "px";
+  chip.style.top = top + "px";
+}
+
+// Rewrites work on clean units: whole lines when the selection spans lines,
+// whole words inside a single line.
+function snapRange(from, to) {
+  const doc = S.view.state.doc;
+  const a = doc.lineAt(from), b = doc.lineAt(Math.max(from, to - 1));
+  if (a.number !== b.number) {
+    return { from: a.from, to: b.to };
+  }
+  const text = a.text;
+  let s = from - a.from, e = to - a.from;
+  while (s > 0 && /\S/.test(text[s - 1])) s--;
+  while (e < text.length && /\S/.test(text[e])) e++;
+  while (s < e && /\s/.test(text[s])) s++;
+  while (e > s && /\s/.test(text[e - 1])) e--;
+  if (e - s >= text.trim().length) return { from: a.from, to: a.to };
+  return { from: a.from + s, to: a.from + e };
 }
 
 function updateFocusChip(info) {
@@ -281,17 +316,29 @@ function updateFocusChip(info) {
 }
 
 function openPopover() {
-  const info = selectionInfo();
-  if (!info) { toast("Highlight part of the script first"); return; }
+  const raw = selectionInfo();
+  if (!raw) { toast("Highlight part of the script first"); return; }
+  clearTimeout(chipTimer);
+  const r = snapRange(raw.from, raw.to);
+  const info = { ...r, text: S.view.state.sliceDoc(r.from, r.to) };
+  // Mark exactly what will be sent, and keep it marked while you type the direction.
+  S.view.dispatch({
+    selection: { anchor: info.from, head: info.to },
+    effects: [clearPending.of("draft"), setPending.of({ id: "draft", from: info.from, to: info.to })],
+  });
   const chip = $("chipRewrite");
   const pop = $("pop");
   pop.hidden = false;
-  const box = $("desk").getBoundingClientRect();
-  const coords = S.view.coordsAtPos(info.to) || { left: box.left + 40, bottom: box.top + 80 };
-  const pw = pop.offsetWidth;
-  pop.style.left = Math.max(8, Math.min(coords.left - box.left - pw / 2, box.width - pw - 8)) + "px";
-  pop.style.top = Math.min(coords.bottom - box.top + 8, box.height - pop.offsetHeight - 8) + "px";
   chip.hidden = true;
+  const box = $("desk").getBoundingClientRect();
+  const end = S.view.coordsAtPos(info.to, -1) || { left: box.left + 40, top: box.top + 60, bottom: box.top + 80 };
+  const start = S.view.coordsAtPos(info.from, 1) || end;
+  const pw = pop.offsetWidth, ph = pop.offsetHeight;
+  let top = end.bottom - box.top + 10;
+  if (top + ph > box.height - 8) top = start.top - box.top - ph - 10;
+  top = Math.max(8, Math.min(top, box.height - ph - 8));
+  pop.style.left = Math.max(8, Math.min(end.left - box.left - pw / 2, box.width - pw - 8)) + "px";
+  pop.style.top = top + "px";
   S.popSel = info;
   $("popQuote").textContent = info.text.trim();
   $("popText").value = "";
@@ -305,7 +352,11 @@ function updatePopButton() {
   $("popGo").textContent = has ? (popCount() === 1 ? "Rewrite" : "Get 3 takes") : "Surprise me";
 }
 
-function closePopover() { $("pop").hidden = true; S.popSel = null; }
+function closePopover(keepDraft) {
+  $("pop").hidden = true;
+  S.popSel = null;
+  if (!keepDraft && S.view) S.view.dispatch({ effects: clearPending.of("draft") });
+}
 
 async function requestRewrite(instruction, existing, count) {
   // existing: {pendingId, original} when refining an earlier round
@@ -316,13 +367,14 @@ async function requestRewrite(instruction, existing, count) {
     if (!r) { toast("That passage was removed"); return; }
     original = S.view.state.sliceDoc(r.from, r.to);
   } else {
-    const info = S.popSel || selectionInfo();
+    const draft = getPending(S.view, "draft");
+    const info = draft || S.popSel || selectionInfo();
     if (!info) return;
     count = popCount();
-    closePopover();
+    closePopover(true);
     pendingId = uid();
-    original = info.text;
-    S.view.dispatch({ effects: setPending.of({ id: pendingId, from: info.from, to: info.to }) });
+    original = S.view.state.sliceDoc(info.from, info.to);
+    S.view.dispatch({ effects: [clearPending.of("draft"), setPending.of({ id: pendingId, from: info.from, to: info.to })] });
   }
   showPane("chat");
 
@@ -806,7 +858,15 @@ function bindUI() {
   $("tabScript").onclick = () => showPane("script");
   $("tabChat").onclick = () => showPane("chat");
 
-  $("deskScroll").addEventListener("scroll", () => { if (!$("chipRewrite").hidden) onSelection(); }, { passive: true });
+  $("deskScroll").addEventListener("scroll", () => { if (!$("chipRewrite").hidden) placeChip(); }, { passive: true });
+  $("sheet").addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    if (!$("pop").hidden) closePopover();
+    S.dragging = true;
+    $("chipRewrite").hidden = true;
+  });
+  window.addEventListener("pointerup", () => { if (S.dragging) { S.dragging = false; onSelection(); } });
+  window.addEventListener("pointercancel", () => { S.dragging = false; });
   window.addEventListener("beforeunload", () => { if (S.dirty) save(); });
 }
 
