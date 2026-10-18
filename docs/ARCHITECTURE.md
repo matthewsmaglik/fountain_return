@@ -33,12 +33,12 @@ The recommendation is to keep (1) as the daily driver and grow toward (3) for sc
 
 | Path | Contents |
 | --- | --- |
-| `scripts/<id>` | `{title, text, updatedAt, source}` |
+| `scripts/<id>` | `{title, text, fileName, fileHash, fileSavedAt, fileModified, updatedAt, source}` |
 | `revisions/<auto>` | `{scriptId, label, color, colorHex, text, at}` |
 | `chats/<scriptId>` | `{turns: [...last 40], updatedAt}` |
 | `settings/main` | `{styleNotes, tier}` |
 
-When Claude writes a script from chat it sets `source: "chat"`. The editor watches the open script: if you have no unsaved typing it loads the new text (undoable); otherwise it asks.
+`fileHash` is a fingerprint of the text last written to (or opened from) the file, which is how the editor knows whether there are unsaved changes. When Claude writes a script from chat it sets `source: "chat"` and must keep the `file*` fields. The editor watches the open script: if you have no unsaved typing it loads the new text (undoable); otherwise it asks.
 
 ## How Claude edits
 

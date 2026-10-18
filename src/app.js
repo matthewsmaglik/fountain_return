@@ -1,7 +1,8 @@
 import { EditorView } from "@codemirror/view";
 import { analyze, formatEighths } from "./fountain.js";
 import { createEditor, replaceDoc, scrollToLine, setPending, clearPending, getPending } from "./editor.js";
-import { artifactClaude, errorCopy } from "./claude.js";
+import { artifactClaude, apiClaude, errorCopy } from "./claude.js";
+import { canWriteFiles, pickFile, pickSaveTarget, writeFile, readHandle, downloadText, saveHandle, loadHandle, fingerprint, ensureExt } from "./files.js";
 import { dbStore, localStore } from "./store.js";
 import { rulesTurn, rewriteTurn, parseEdits } from "./prompts.js";
 
@@ -49,7 +50,12 @@ const S = {
   bdTab: "scenes",
   settings: { styleNotes: "", tier: "default" },
   busy: null, // AbortController of the running Claude call
+  // The file this script belongs to.
+  file: { name: "", hash: "", savedAt: 0, handle: null, modified: 0 },
 };
+const IN_CLAUDE = !!window.claude;
+const LOCAL_KEY = "fountain-studio:apikey";
+const getApiKey = () => { try { return localStorage.getItem(LOCAL_KEY) || ""; } catch { return ""; } };
 
 // ---------------------------------------------------------------- boot
 let EMPTY_HTML = "";
@@ -64,25 +70,32 @@ async function boot() {
   await refreshScripts();
   if (S.scripts.length) await openScript(S.scripts[0].id);
   else showEmpty();
-  artifactClaude().then((c) => { S.claude = c; S.claudeChecked = true; renderChat(); }).catch(() => { S.claudeChecked = true; renderChat(); });
+  artifactClaude()
+    .catch(() => null)
+    .then((c) => {
+      S.claude = c || (getApiKey() ? apiClaude(getApiKey()) : null);
+      S.claudeChecked = true;
+      renderChat();
+    });
 }
 
 async function refreshScripts() {
   S.scripts = await S.store.listScripts().catch(() => []);
   const sel = $("scriptSelect");
   sel.innerHTML = S.scripts.length
-    ? S.scripts.map((s) => `<option value="${esc(s.id)}">${esc(s.title || "Untitled")}</option>`).join("")
-    : `<option value="">No scripts</option>`;
+    ? `<option value="" disabled>Recent</option>` + S.scripts.map((s) => `<option value="${esc(s.id)}">${esc(s.fileName || ensureExt(s.title))}</option>`).join("")
+    : `<option value="">No scripts yet</option>`;
   if (S.id) sel.value = S.id;
 }
 
 function showEmpty() {
   $("empty").innerHTML = EMPTY_HTML;
-  $("emptyOpen").onclick = () => $("fileInput").click();
+  $("emptyOpen").onclick = openFromDisk;
   $("emptyNew").onclick = () => createScript(NEW_SCRIPT, "Untitled");
   $("sheet").hidden = true;
   $("empty").hidden = false;
   $("breakdown").hidden = true;
+  $("fileBox").hidden = true;
   setStatus("");
 }
 
@@ -96,6 +109,14 @@ async function openScript(id) {
   S.title = doc.title || "Untitled";
   S.lastSaved = doc.text || "";
   S.dirty = false;
+  S.file = {
+    name: doc.fileName || ensureExt(S.title),
+    hash: doc.fileHash || "",
+    savedAt: doc.fileSavedAt || 0,
+    handle: canWriteFiles ? await loadHandle(id) : null,
+    modified: doc.fileModified || 0,
+  };
+  $("fileBox").hidden = false;
   $("empty").hidden = true;
   $("sheet").hidden = false;
   $("breakdown").hidden = $("btnBreakdown").getAttribute("aria-pressed") !== "true";
@@ -111,50 +132,90 @@ async function openScript(id) {
     S.view.load(S.lastSaved);
   }
   $("scriptSelect").value = id;
-  setStatus("Saved");
+  setStatus("");
+  renderFileState();
   runAnalysis();
   S.turns = await S.store.loadChat(id).catch(() => []);
   renderChat();
   S.unwatch = S.store.watchScript(id, onRemoteChange);
 }
 
-async function createScript(text, nameHint) {
+async function createScript(text, nameHint, file = {}) {
   const a = analyze(text);
   const title = a.meta.title || nameHint || "Untitled";
-  const id = slug(title) + "-" + uid().slice(0, 4);
-  await S.store.saveScript(id, { title, text });
+  const id = slug(file.name ? file.name.replace(/\.[^.]+$/, "") : title) + "-" + uid().slice(0, 4);
+  const fileName = ensureExt(file.name || title);
+  const meta = { fileName, fileHash: file.name ? fingerprint(text) : "", fileSavedAt: 0, fileModified: file.modified || 0 };
+  await S.store.saveScript(id, { title, text, ...meta });
+  if (file.handle) await saveHandle(id, file.handle);
   await refreshScripts();
   await openScript(id);
-  toast(`Opened ${title}`);
+  toast(file.name ? `Opened ${fileName}` : `Started ${fileName}`);
 }
 
 const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "script";
 
 function onDocChange() {
   S.dirty = true;
-  setStatus("Editing", true);
+  setStatus("");
+  renderFileState();
   clearTimeout(S.saveTimer);
   S.saveTimer = setTimeout(save, 1200);
   clearTimeout(S.anTimer);
   S.anTimer = setTimeout(runAnalysis, 250);
 }
 
+// Keeps a backup of every change (in Claude, or in this browser). This is
+// separate from saving to the file, which only happens when you press Save.
 async function save() {
   if (!S.id || !S.view) return;
   if (S.saving) { await S.saving; }
   const text = S.view.state.doc.toString();
-  if (text === S.lastSaved) { S.dirty = false; setStatus("Saved"); return; }
+  if (text === S.lastSaved && !S.metaDirty) { S.dirty = false; setStatus(""); return; }
   const title = analyze(text).meta.title || S.title || "Untitled";
-  setStatus("Saving", true);
-  S.saving = S.store.saveScript(S.id, { title, text })
+  setStatus("Backing up…");
+  S.metaDirty = false;
+  S.saving = S.store.saveScript(S.id, { title, text, ...fileMeta() })
     .then(() => {
       S.lastSaved = text;
-      if (S.view.state.doc.toString() === text) { S.dirty = false; setStatus("Saved"); }
+      if (S.view.state.doc.toString() === text) { S.dirty = false; setStatus(IN_CLAUDE ? "Backed up in Claude" : "Backed up in this browser"); }
       if (title !== S.title) { S.title = title; refreshScripts(); }
     })
-    .catch((e) => setStatus(e?.code === "quota_exceeded" ? "Storage full" : "Not saved", true))
+    .catch((e) => setStatus(e?.code === "quota_exceeded" ? "Backup full" : "Backup failed", true))
     .finally(() => { S.saving = null; });
   await S.saving;
+}
+
+const fileMeta = () => ({ fileName: S.file.name, fileHash: S.file.hash, fileSavedAt: S.file.savedAt, fileModified: S.file.modified || 0 });
+
+function fileIsCurrent() {
+  return !!S.view && !!S.file.hash && fingerprint(S.view.state.doc.toString()) === S.file.hash;
+}
+
+function renderFileState() {
+  if (!S.view) return;
+  $("fileName").textContent = S.file.name;
+  const el = $("fileState");
+  const current = fileIsCurrent();
+  const when = S.file.savedAt ? new Date(S.file.savedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
+  let state, text;
+  if (current) {
+    state = "saved";
+    text = !S.file.savedAt ? "No changes since opening"
+      : S.file.handle ? `Saved to file ${when}` : IN_CLAUDE ? `Downloaded ${when}` : `Saved ${when}`;
+  } else if (!S.file.hash) {
+    state = "never"; text = "Not saved to a file yet";
+  } else {
+    state = "unsaved"; text = "Unsaved changes";
+  }
+  el.dataset.state = state;
+  $("fileStateText").textContent = text;
+  el.title = S.file.handle
+    ? "Save writes straight into this file on your computer."
+    : IN_CLAUDE
+      ? "Inside claude.ai, Save downloads a copy. Your edits are also backed up in Claude automatically."
+      : "Save downloads the file.";
+  $("btnSave").classList.toggle("clean", current);
 }
 
 async function flushSave() {
@@ -170,7 +231,7 @@ function onRemoteChange(doc) {
     replaceDoc(S.view, doc.text);
     S.lastSaved = doc.text;
     S.dirty = false;
-    setStatus("Updated from chat");
+    renderFileState();
     toast("Script updated from your Claude chat");
     return;
   }
@@ -182,6 +243,7 @@ function onRemoteChange(doc) {
 }
 
 function setStatus(t, warn) {
+  if (!$("status")) return;
   const el = $("status");
   el.textContent = t;
   el.classList.toggle("dirty", !!warn);
@@ -673,23 +735,126 @@ function inline(s) {
 }
 
 // ---------------------------------------------------------------- export, revisions, settings
-async function exportScript() {
+// Save: write the actual file when the browser allows it, otherwise download.
+async function saveToFile({ as } = {}) {
   if (!S.view) return;
-  await flushSave();
   const text = S.view.state.doc.toString();
-  const name = (slug(S.title) || "script") + ".fountain";
-  const downloads = window.claude ? await window.claude.use("downloads") : null;
-  if (downloads) {
-    try { await downloads.save({ filename: name, data: text }); toast("Saved to your computer"); return; }
-    catch (e) {
-      if (e?.code === "declined") return;
-      if (e?.code === "rejected_extension") {
-        try { await downloads.save({ filename: name.replace(/\.fountain$/, ".txt"), data: text }); toast("Saved as .txt. Rename it to .fountain."); return; } catch {}
+  let done = false;
+
+  if (canWriteFiles) {
+    try {
+      let handle = as ? null : S.file.handle;
+      if (!handle) {
+        handle = await pickSaveTarget(S.file.name);
+        await saveHandle(S.id, handle);
       }
+      const info = await writeFile(handle, text);
+      S.file.handle = handle;
+      S.file.name = info.name;
+      S.file.modified = info.modified;
+      done = true;
+      toast(`Saved ${info.name}`);
+    } catch (e) {
+      if (e?.name === "AbortError") return;
+      toast("Couldn't write the file. Check that it isn't open elsewhere, then try again.");
+      return;
     }
+  } else if (IN_CLAUDE) {
+    const downloads = await window.claude.use("downloads");
+    if (!downloads) { toast("Downloads aren't available in this view."); return; }
+    // claude.ai only accepts a fixed list of file types, and .fountain is not
+    // on it yet, so the file arrives as name.fountain.txt.
+    const filename = S.file.name + ".txt";
+    try {
+      await downloads.save({ filename, data: text });
+      done = true;
+      toast(`Downloaded ${filename}. Remove the .txt ending to open it as Fountain.`);
+    } catch (e) {
+      if (e?.code === "declined") return;
+      toast("The download didn't go through. Try again.");
+      return;
+    }
+  } else {
+    downloadText(S.file.name, text);
+    done = true;
+    toast(`Downloaded ${S.file.name}`);
   }
-  try { await navigator.clipboard.writeText(text); toast("Copied the script to your clipboard"); }
-  catch { toast("Export isn't available here. Select all in the script and copy."); }
+
+  if (done) {
+    S.file.hash = fingerprint(text);
+    S.file.savedAt = Date.now();
+    S.metaDirty = true;
+    renderFileState();
+    await save();
+    refreshScripts();
+  }
+}
+
+async function openFromDisk() {
+  if (canWriteFiles) {
+    try {
+      const f = await pickFile();
+      const existing = S.scripts.find((x) => x.fileName === f.name);
+      if (existing) {
+        const doc = await S.store.loadScript(existing.id);
+        if (doc && doc.text === f.text) { await saveHandle(existing.id, f.handle); await openScript(existing.id); return; }
+      }
+      await createScript(f.text, f.name, f);
+    } catch (e) {
+      if (e?.name !== "AbortError") toast("Couldn't open that file.");
+    }
+    return;
+  }
+  $("fileInput").click();
+}
+
+function startRename() {
+  const btn = $("fileName"), inp = $("fileRename");
+  inp.value = S.file.name;
+  btn.hidden = true;
+  inp.hidden = false;
+  inp.focus();
+  inp.setSelectionRange(0, S.file.name.replace(/\.[^.]+$/, "").length);
+  const finish = (commit) => {
+    inp.onblur = inp.onkeydown = null;
+    inp.hidden = true;
+    btn.hidden = false;
+    const next = ensureExt(inp.value);
+    if (!commit || next === S.file.name) return;
+    S.file.name = next;
+    // A new name means the next Save makes a new file.
+    S.file.handle = null;
+    S.file.hash = "";
+    S.metaDirty = true;
+    renderFileState();
+    save().then(refreshScripts);
+    toast(`Renamed to ${next}. Save to write it.`);
+  };
+  inp.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); finish(true); } if (e.key === "Escape") finish(false); };
+  inp.onblur = () => finish(true);
+}
+
+// When you come back to the tab, pick up edits made to the file elsewhere.
+async function checkFileOnDisk() {
+  if (!S.file.handle || !S.view) return;
+  const f = await readHandle(S.file.handle).catch(() => null);
+  if (!f || !S.file.modified || f.modified <= S.file.modified) return;
+  const current = S.view.state.doc.toString();
+  S.file.modified = f.modified;
+  if (f.text === current) return;
+  if (fileIsCurrent()) {
+    replaceDoc(S.view, f.text);
+    S.file.hash = fingerprint(f.text);
+    S.metaDirty = true;
+    renderFileState();
+    toast(`${f.name} changed on disk. Loaded the new version.`);
+    return;
+  }
+  const b = $("banner");
+  b.innerHTML = `<span style="flex:1;min-width:12ch">${esc(f.name)} was changed outside the editor.</span><button class="btn" id="bnLoad">Load file</button><button class="btn" id="bnKeep">Keep mine</button>`;
+  b.hidden = false;
+  $("bnLoad").onclick = () => { replaceDoc(S.view, f.text); S.file.hash = fingerprint(f.text); S.metaDirty = true; renderFileState(); b.hidden = true; };
+  $("bnKeep").onclick = () => { b.hidden = true; };
 }
 
 async function openRevisions() {
@@ -742,6 +907,9 @@ function openSettings() {
         <option value="default">Balanced</option>
         <option value="complex">Most capable (structure, big notes)</option>
       </select></div>
+    ${IN_CLAUDE ? "" : `<div class="field"><label for="setKey">Anthropic API key (kept only in this browser)</label>
+      <input id="setKey" type="password" autocomplete="off" placeholder="sk-ant-..." value="${esc(getApiKey())}" style="border:1px solid var(--line);border-radius:6px;padding:7px 9px;background:var(--panel)">
+      <p class="hint">Outside claude.ai, chat and rewrites run on your own API key and are billed to it.</p></div>`}
     <p class="hint">Saved with your scripts. Storage: ${S.store?.kind === "db" ? "this page's database, readable by Claude in your chats" : "this browser only"}.</p>
     <div style="display:flex;gap:6px;justify-content:space-between;flex-wrap:wrap">
       <button class="btn primary" id="setSave">Save settings</button>
@@ -751,6 +919,12 @@ function openSettings() {
   $("setClose").onclick = openSettings;
   $("setSave").onclick = async () => {
     S.settings = { ...S.settings, styleNotes: $("setStyle").value.trim(), tier: $("setTier").value };
+    if (!IN_CLAUDE && $("setKey")) {
+      const k = $("setKey").value.trim();
+      try { k ? localStorage.setItem(LOCAL_KEY, k) : localStorage.removeItem(LOCAL_KEY); } catch {}
+      S.claude = k ? apiClaude(k) : null;
+      renderChat();
+    }
     await S.store.saveSettings(S.settings).catch(() => {});
     toast("Settings saved");
     openSettings();
@@ -791,7 +965,7 @@ function autoGrow() {
 
 function bindUI() {
   $("scriptSelect").onchange = (e) => e.target.value && openScript(e.target.value);
-  const openFile = () => $("fileInput").click();
+  const openFile = openFromDisk;
   $("btnOpen").onclick = openFile;
   $("emptyOpen").onclick = openFile;
   $("fileInput").onchange = async (e) => {
@@ -799,12 +973,17 @@ function bindUI() {
     if (!f) return;
     const text = await f.text();
     e.target.value = "";
-    createScript(text, f.name.replace(/\.[^.]+$/, ""));
+    createScript(text, f.name.replace(/\.[^.]+$/, ""), { name: f.name, modified: f.lastModified });
   };
   const newScript = () => createScript(NEW_SCRIPT, "Untitled");
   $("btnNew").onclick = newScript;
   $("emptyNew").onclick = newScript;
-  $("btnExport").onclick = exportScript;
+  $("btnSave").onclick = () => saveToFile();
+  $("fileName").onclick = startRename;
+  window.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") { e.preventDefault(); saveToFile({ as: e.shiftKey }); }
+  });
+  window.addEventListener("focus", checkFileOnDisk);
   $("btnRevisions").onclick = openRevisions;
   $("btnSettings").onclick = openSettings;
 

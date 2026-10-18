@@ -19,6 +19,16 @@ A two-pane screenplay editor for working on Fountain scripts with Claude.
 
 You can always edit, cut, and retype anything yourself. The script is just text.
 
+## Files and saving
+
+The top bar shows the file you're editing and whether it has unsaved changes. Click the name to rename it. **Save** (⌘S) is the only thing that writes a file; ⌘⇧S saves under a new name. Separately, every change is backed up automatically (in Claude, or in the browser), so closing the tab never loses work.
+
+| Where you open the editor | What Save does |
+| --- | --- |
+| Chrome, Edge or Arc, from `dist/fountain-studio.html` or a web host | Writes straight into the `.fountain` file you opened, in place. The editor remembers the file, and picks up edits made to it elsewhere when you return to the tab. Chat needs an API key in Settings. |
+| Safari or Firefox, same file | Downloads `name.fountain`. |
+| claude.ai | Downloads `name.fountain.txt`, because claude.ai only allows certain file types and `.fountain` isn't one of them. Remove the `.txt` ending. Chat runs on your Claude plan. |
+
 ## How it runs
 
 The page is published as a claude.ai Artifact and uses two platform capabilities:

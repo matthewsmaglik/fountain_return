@@ -63,11 +63,22 @@ button { cursor: pointer; }
 }
 .mark { font-family: var(--f-script); font-weight: 700; font-size: 15px; letter-spacing: .02em; white-space: nowrap; }
 .mark span { color: var(--accent); }
-.script-pick { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1 1 200px; }
-.script-pick select {
-  min-width: 0; max-width: 280px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px;
-  background: var(--paper); font-family: var(--f-script); font-weight: 700;
+.file { display: flex; align-items: baseline; gap: 10px; min-width: 0; flex: 1 1 260px; flex-wrap: wrap; row-gap: 2px; }
+.file-name {
+  border: 0; background: transparent; padding: 2px 4px; margin-left: -4px; border-radius: 4px; min-width: 0; max-width: 100%;
+  font-family: var(--f-script); font-weight: 700; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.file-name:hover { background: var(--desk); }
+.file-rename { font-family: var(--f-script); font-weight: 700; font-size: 15px; border: 1px solid var(--accent); border-radius: 4px; padding: 1px 4px; background: var(--paper); width: min(32ch, 100%); }
+.file-state { display: inline-flex; align-items: center; gap: 6px; font-family: var(--f-label); font-size: 12.5px; letter-spacing: .02em; color: var(--muted); white-space: nowrap; }
+.file-state i { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; }
+.file-state[data-state="unsaved"] { color: var(--warn); }
+.file-state[data-state="unsaved"] i { background: var(--warn); }
+.file-state[data-state="never"] i { background: var(--faint); }
+.tools select { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); font-family: var(--f-label); font-size: 13px; max-width: 180px; }
+.btn.save { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.btn.save kbd { font-family: var(--f-label); font-size: 11px; opacity: .7; margin-left: 2px; }
+.btn.save.clean { background: var(--paper); border-color: var(--line); color: var(--ink); font-weight: 500; }
 .status { font-family: var(--f-label); font-size: 12px; color: var(--faint); letter-spacing: .03em; white-space: nowrap; }
 .status.dirty { color: var(--warn); }
 .tools { display: flex; gap: 4px; flex-wrap: wrap; }
@@ -282,15 +293,18 @@ button { cursor: pointer; }
 <div class="app" id="app">
   <header class="bar">
     <div class="mark">FOUNTAIN<span>.</span>STUDIO</div>
-    <div class="script-pick">
-      <select id="scriptSelect" aria-label="Script"></select>
+    <div class="file" id="fileBox" hidden>
+      <button class="file-name" id="fileName" title="Rename file"></button>
+      <input class="file-rename" id="fileRename" type="text" aria-label="File name" hidden>
+      <span class="file-state" id="fileState" data-state="saved"><i></i><span id="fileStateText"></span></span>
       <span class="status" id="status"></span>
     </div>
     <div class="tools">
+      <select id="scriptSelect" aria-label="Recent scripts"></select>
       <button class="btn" id="btnNew">New</button>
-      <button class="btn" id="btnOpen">Open .fountain</button>
+      <button class="btn" id="btnOpen">Open</button>
       <input type="file" id="fileInput" accept=".fountain,.txt,.spmd,text/plain" hidden>
-      <button class="btn" id="btnExport">Export</button>
+      <button class="btn save" id="btnSave" title="Save (⌘S)">Save <kbd>⌘S</kbd></button>
       <button class="btn" id="btnRevisions" aria-pressed="false">Revisions</button>
       <button class="btn ghost" id="btnSettings" aria-pressed="false">Settings</button>
     </div>

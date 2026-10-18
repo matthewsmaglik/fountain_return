@@ -22,7 +22,7 @@ export async function dbStore() {
     async listScripts() {
       const snap = await safe(db.collection("scripts").get());
       return snap.docs
-        .map((d) => ({ id: d.id, title: d.data().title, updatedAt: d.data().updatedAt || 0 }))
+        .map((d) => ({ id: d.id, title: d.data().title, fileName: d.data().fileName, updatedAt: d.data().updatedAt || 0 }))
         .sort((a, b) => b.updatedAt - a.updatedAt);
     },
     async loadScript(id) {
@@ -62,7 +62,7 @@ export function localStore() {
   return {
     kind: "local",
     async listScripts() {
-      return Object.values(get("scripts", {})).map(({ id, title, updatedAt }) => ({ id, title, updatedAt })).sort((a, b) => b.updatedAt - a.updatedAt);
+      return Object.values(get("scripts", {})).map(({ id, title, fileName, updatedAt }) => ({ id, title, fileName, updatedAt })).sort((a, b) => b.updatedAt - a.updatedAt);
     },
     async loadScript(id) { return get("scripts", {})[id] || null; },
     async saveScript(id, data) { const all = get("scripts", {}); all[id] = { id, ...data, updatedAt: Date.now() }; put("scripts", all); },
