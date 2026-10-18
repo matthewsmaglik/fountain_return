@@ -109,6 +109,12 @@ export function createEditor({ parent, doc, onChange, onSelection, extraKeys = [
     }),
   ];
   const view = new EditorView({ parent, state: EditorState.create({ doc, extensions }) });
+  // The script font arrives after the editor first measures itself. Measure
+  // again once it's in, or selections drift by a fraction of a character.
+  if (document.fonts) {
+    document.fonts.ready.then(() => view.requestMeasure());
+    document.fonts.addEventListener?.("loadingdone", () => view.requestMeasure());
+  }
   // Swap in a different script with a clean undo history.
   view.load = (text) => view.setState(EditorState.create({ doc: text, extensions }));
   return view;

@@ -143,11 +143,12 @@ button { cursor: pointer; }
 .fl-synopsis, .fl-note, .fl-boneyard { color: var(--faint); font-style: italic; }
 .fl-lyric { font-style: italic; padding-left: 10ch !important; }
 .fl-pending { background: var(--pending); box-shadow: inset 0 -2px 0 var(--pending-edge); border-radius: 1px; }
-.fl-pagebreak {
-  display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin: 18px -7ch 18px; padding-right: 3ch;
-  border-top: 1px dashed var(--line); height: 0; color: var(--faint); font-size: 13px;
-}
-.fl-pagebreak span { transform: translateY(-1.3em); background: var(--paper); padding-left: 6px; }
+/* Page markers are block widgets: the editor measures their box to map clicks
+   to lines, so their height must be real height (no margins, no zero-height
+   tricks) or every click below them lands on the wrong line. */
+.fl-pagebreak { position: relative; height: 40px; box-sizing: border-box; color: var(--faint); font-size: 13px; line-height: 1; }
+.fl-pagebreak::before { content: ""; position: absolute; left: -7ch; right: -7ch; top: 50%; border-top: 1px dashed var(--line); }
+.fl-pagebreak span { position: absolute; right: -4ch; top: 50%; transform: translateY(-50%); background: var(--paper); padding: 0 6px; }
 
 @media (max-width: 640px) {
   :root { --script-size: 12.5px; }
@@ -156,7 +157,8 @@ button { cursor: pointer; }
   .fl-dialogue { padding-left: 5ch !important; padding-right: 5ch !important; }
   .fl-parenthetical { padding-left: 9ch !important; padding-right: 9ch !important; }
   .fl-scene::before { display: none; }
-  .fl-pagebreak { margin-inline: -3ch; }
+  .fl-pagebreak::before { left: -3ch; right: -3ch; }
+  .fl-pagebreak span { right: -1ch; }
 }
 
 /* ---- Selection chip and rewrite popover ---- */
