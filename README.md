@@ -51,3 +51,7 @@ samples/         sample scripts
 test/            parser tests
 docs/            architecture notes
 ```
+
+## Live page
+
+Published at https://claude.ai/artifact/HtXx6CcxNANCx5fUxeeqMy (private to the owner). Rebuild and republish after changes to `src/`.
