@@ -79,6 +79,20 @@ button { cursor: pointer; }
 .btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--ink); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .btn.ghost { border-color: transparent; background: transparent; }
+.btn-bd {
+  display: inline-flex; align-items: center; gap: 7px; margin-left: 4px; padding: 5px 6px 5px 11px;
+  border: 1.5px solid var(--ink); border-radius: 999px; background: transparent; color: var(--ink);
+  font-family: var(--f-label); font-size: 13px; font-weight: 600; letter-spacing: .03em; white-space: nowrap;
+}
+.btn-bd svg { width: 15px; height: 15px; flex: none; }
+.btn-bd .bd-badge {
+  font-family: var(--f-script); font-weight: 700; font-size: 12px; font-variant-numeric: tabular-nums;
+  padding: 1px 7px; border-radius: 999px; background: var(--ink); color: var(--paper);
+}
+.btn-bd .bd-badge:empty { display: none; }
+.btn-bd[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.btn-bd[aria-pressed="true"] .bd-badge { background: var(--paper); color: var(--ink); }
+.btn-bd:hover { box-shadow: 0 0 0 3px color-mix(in srgb, var(--ink) 14%, transparent); }
 .btn:disabled { opacity: .5; cursor: default; }
 
 /* ---- Panes ---- */
@@ -279,9 +293,13 @@ button { cursor: pointer; }
       <input type="file" id="fileInput" accept=".fountain,.txt,.spmd,text/plain" hidden>
       <button class="btn" id="btnExport">Export</button>
       <button class="btn" id="btnRevisions" aria-pressed="false">Revisions</button>
-      <button class="btn" id="btnBreakdown" aria-pressed="true">Breakdown</button>
       <button class="btn ghost" id="btnSettings" aria-pressed="false">Settings</button>
     </div>
+    <button class="btn-bd" id="btnBreakdown" aria-pressed="true" title="Show or hide the breakdown">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2" width="13" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M4 5.5h8M4 8h8M4 10.5h5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+      <span>Breakdown</span>
+      <span class="bd-badge" id="bdBadge"></span>
+    </button>
   </header>
 
   <div class="panes" id="panes" data-show="script">

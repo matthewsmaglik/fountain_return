@@ -198,6 +198,7 @@ function renderBreakdown() {
   const a = S.analysis;
   if (!a) return;
   const runtime = a.pages ? `${a.pages}` : "0";
+  $("bdBadge").textContent = `${a.pages} pp`;
   $("bdTitle").textContent = a.meta.title ? `Breakdown · ${a.meta.title}` : "Breakdown";
   $("bdStats").innerHTML = [
     [a.pages, "pages"],
